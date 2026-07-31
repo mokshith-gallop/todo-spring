@@ -37,7 +37,7 @@ public class Task {
     private String notes;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, columnDefinition = "varchar(10)")
+    @Column(nullable = false, columnDefinition = "priority")
     private Priority priority;
 
     @Column(nullable = false)
