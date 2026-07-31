@@ -63,6 +63,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity.unprocessableEntity().body(Map.of("error", error));
     }
 
+    @ExceptionHandler(AuthenticationRequiredException.class)
+    public ResponseEntity<Map<String, Object>> handleAuthenticationRequired(AuthenticationRequiredException ex) {
+        Map<String, Object> error = Map.of(
+                "code", "UNAUTHORIZED",
+                "message", "Authentication required"
+        );
+
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", error));
+    }
+
     @ExceptionHandler(NotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleNotFound(NotFoundException ex) {
         Map<String, Object> error = Map.of(

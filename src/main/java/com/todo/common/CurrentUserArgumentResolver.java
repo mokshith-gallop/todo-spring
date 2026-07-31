@@ -1,5 +1,6 @@
 package com.todo.common;
 
+import com.todo.exception.AuthenticationRequiredException;
 import org.springframework.core.MethodParameter;
 import org.springframework.stereotype.Component;
 import org.springframework.web.bind.support.WebDataBinderFactory;
@@ -31,12 +32,12 @@ public class CurrentUserArgumentResolver implements HandlerMethodArgumentResolve
                                   WebDataBinderFactory binderFactory) {
         String header = webRequest.getHeader(HEADER);
         if (header == null || header.isBlank()) {
-            throw new IllegalStateException("Missing " + HEADER + " header");
+            throw new AuthenticationRequiredException("Missing " + HEADER + " header");
         }
         try {
             return UUID.fromString(header);
         } catch (IllegalArgumentException e) {
-            throw new IllegalStateException("Invalid " + HEADER + " header: " + header);
+            throw new AuthenticationRequiredException("Invalid " + HEADER + " header: " + header);
         }
     }
 }
