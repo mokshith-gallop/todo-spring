@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# smoke.sh — exercises POST /api/v1/tasks against a live backend.
+# smoke.sh — exercises POST /api/v1/tasks and POST /api/v1/lists against a live backend.
 # Usage: BASE_URL=http://127.0.0.1:8080 ./smoke.sh
 # Expects DATABASE_URL (or SPRING_DATASOURCE_* / APP_DB_*) in the environment.
 set -euo pipefail
@@ -54,6 +54,15 @@ post() {
   # $1 = JSON body, remaining args = extra curl flags
   local body="$1"; shift
   curl -s -w "\n%{http_code}" -X POST "${BASE_URL}/api/v1/tasks" \
+    -H "Content-Type: application/json" \
+    "$@" \
+    -d "$body"
+}
+
+post_list() {
+  # $1 = JSON body, remaining args = extra curl flags
+  local body="$1"; shift
+  curl -s -w "\n%{http_code}" -X POST "${BASE_URL}/api/v1/lists" \
     -H "Content-Type: application/json" \
     "$@" \
     -d "$body"
@@ -253,6 +262,113 @@ else
   echo "  ✗ X-Request-Id missing from response"
   FAIL=$((FAIL + 1))
 fi
+
+# ══════════════════════════════════════════════════════════
+# POST /api/v1/lists — Create a Task List
+# ══════════════════════════════════════════════════════════
+
+# ── List AC-1: Happy path — create list ──────────────────
+# NOTE: User1 already has a seeded list at position 0 ("Smoke List"),
+#       so the first API-created list gets position 1, second gets 2.
+echo ""
+echo "=== List AC-1: Create list — happy path ==="
+
+RESP=$(post_list "{\"name\":\"Groceries\"}" \
+  -H "X-User-Id: $USER1_ID")
+HTTP=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | sed '$d')
+
+check "Create list returns 201" "201" "$HTTP"
+check_body "Response contains id" '"id"' "$BODY"
+check_body "Name is Groceries" '"name":"Groceries"' "$BODY"
+check_body "isInbox is false" '"isInbox":false' "$BODY"
+check_body "Position is 1 (after seeded list)" '"position":1.0' "$BODY"
+check_body "createdAt is present" '"createdAt"' "$BODY"
+check_body "updatedAt is present" '"updatedAt"' "$BODY"
+
+# Extract the created list ID for tenant isolation test later
+LIST_CREATED_ID=$(echo "$BODY" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+
+# Second list — position should increment
+echo ""
+echo "=== List AC-1: Second list — position increments ==="
+RESP=$(post_list "{\"name\":\"Work\"}" \
+  -H "X-User-Id: $USER1_ID")
+HTTP=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | sed '$d')
+
+check "Second list returns 201" "201" "$HTTP"
+check_body "Position is 2" '"position":2.0' "$BODY"
+
+# Name with whitespace — should be trimmed
+echo ""
+echo "=== List AC-1: Name trimming ==="
+RESP=$(post_list "{\"name\":\"  Trimmed  \"}" \
+  -H "X-User-Id: $USER1_ID")
+HTTP=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | sed '$d')
+
+check "Trimmed name returns 201" "201" "$HTTP"
+check_body "Name is trimmed" '"name":"Trimmed"' "$BODY"
+
+# ── List AC-2: Blank name → 422 ─────────────────────────
+echo ""
+echo "=== List AC-2: Blank name validation ==="
+
+# Empty name
+RESP=$(post_list "{\"name\":\"\"}" -H "X-User-Id: $USER1_ID")
+HTTP=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | sed '$d')
+check "Empty list name returns 422" "422" "$HTTP"
+check_body "Error code is VALIDATION_ERROR" '"code":"VALIDATION_ERROR"' "$BODY"
+
+# Whitespace-only name
+RESP=$(post_list "{\"name\":\"   \"}" -H "X-User-Id: $USER1_ID")
+HTTP=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | sed '$d')
+check "Whitespace list name returns 422" "422" "$HTTP"
+check_body "Error code is VALIDATION_ERROR" '"code":"VALIDATION_ERROR"' "$BODY"
+
+# ── List AC-3: Name too long → 422 ──────────────────────
+echo ""
+echo "=== List AC-3: Name length validation ==="
+
+# 121 chars → 422
+NAME_121=$(python3 -c "print('a' * 121)")
+RESP=$(post_list "{\"name\":\"$NAME_121\"}" -H "X-User-Id: $USER1_ID")
+HTTP=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | sed '$d')
+check "Name 121 chars returns 422" "422" "$HTTP"
+check_body "Error code is VALIDATION_ERROR" '"code":"VALIDATION_ERROR"' "$BODY"
+
+# 120 chars → 201 (boundary)
+NAME_120=$(python3 -c "print('b' * 120)")
+RESP=$(post_list "{\"name\":\"$NAME_120\"}" -H "X-User-Id: $USER1_ID")
+HTTP=$(echo "$RESP" | tail -1)
+check "Name 120 chars returns 201" "201" "$HTTP"
+
+# ── List AC-4: Tenant isolation ──────────────────────────
+echo ""
+echo "=== List AC-4: Tenant isolation ==="
+
+# User2 tries to create a task in the list User1 just created — should get 404
+RESP=$(post "{\"title\":\"Sneaky task\",\"listId\":\"$LIST_CREATED_ID\"}" \
+  -H "X-User-Id: $USER2_ID")
+HTTP=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | sed '$d')
+check "User2 cannot use User1's list for tasks — 404" "404" "$HTTP"
+check_body "Error code is NOT_FOUND" '"code":"NOT_FOUND"' "$BODY"
+
+# ── List AC-5: Unauthenticated → 401 ────────────────────
+echo ""
+echo "=== List AC-5: Unauthenticated ==="
+
+# No X-User-Id header
+RESP=$(post_list "{\"name\":\"No auth\"}")
+HTTP=$(echo "$RESP" | tail -1)
+BODY=$(echo "$RESP" | sed '$d')
+check "Missing X-User-Id returns 401" "401" "$HTTP"
+check_body "Error code is UNAUTHORIZED" '"code":"UNAUTHORIZED"' "$BODY"
 
 # ── Summary ──────────────────────────────────────────────
 echo ""
