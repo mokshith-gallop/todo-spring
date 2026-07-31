@@ -1,0 +1,22 @@
+# Build output
+target/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Maven wrapper downloaded binary
+.mvn/wrapper/maven-wrapper.jar
+
+# Env files
+.env

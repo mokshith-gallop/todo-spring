@@ -1,0 +1,21 @@
+{
+  "services": {
+    "backend": {
+      "cwd": ".",
+      "cmd": "sh",
+      "args": [
+        "-c",
+        "./mvnw spring-boot:run -Dspring-boot.run.arguments='--server.port=8080'"
+      ],
+      "port": 8080,
+      "healthCheck": {
+        "path": "/api/actuator/health",
+        "timeoutSeconds": 180
+      }
+    }
+  },
+  "routes": {
+    "/api": { "service": "backend", "stripPrefix": false },
+    "/": { "service": "backend", "stripPrefix": false }
+  }
+}
